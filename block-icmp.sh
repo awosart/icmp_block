@@ -8,30 +8,37 @@ if [[ $EUID -ne 0 ]]; then
    exit 1
 fi
 
+# Создаём бэкап
 BACKUP="/etc/ufw/before.rules.bak.$(date +%Y%m%d_%H%M%S)"
 cp /etc/ufw/before.rules "$BACKUP"
 echo "✅ Бэкап создан: $BACKUP"
 
-add_rules() {
-    local section="$1"
-    local chain="$2"
-    if grep -q "echo-request -j DROP" /etc/ufw/before.rules; then
-        echo "   Правила уже существуют."
-        return
-    fi
-    sed -i "/# $section/a\\
--A $chain -p icmp --icmp-type destination-unreachable -j DROP\\
--A $chain -p icmp --icmp-type time-exceeded -j DROP\\
--A $chain -p icmp --icmp-type parameter-problem -j DROP\\
--A $chain -p icmp --icmp-type echo-request -j DROP\\
--A $chain -p icmp --icmp-type source-quench -j DROP" /etc/ufw/before.rules
-}
+# === Заменяем блок INPUT ===
+sed -i '/# ok icmp codes for INPUT/,/^# ok icmp code for FORWARD/{
+  /# ok icmp codes for INPUT/a\
+-A ufw-before-input -p icmp --icmp-type destination-unreachable -j DROP\
+-A ufw-before-input -p icmp --icmp-type time-exceeded -j DROP\
+-A ufw-before-input -p icmp --icmp-type parameter-problem -j DROP\
+-A ufw-before-input -p icmp --icmp-type echo-request -j DROP\
+-A ufw-before-input -p icmp --icmp-type source-quench -j DROP
+  /# ok icmp codes for INPUT/,/^# ok icmp code for FORWARD/d
+}' /etc/ufw/before.rules
 
-add_rules "ok icmp codes for INPUT" "ufw-before-input"
-add_rules "ok icmp codes for FORWARD" "ufw-before-forward"
+# === Заменяем блок FORWARD ===
+sed -i '/# ok icmp code for FORWARD/,/^# ok icmp codes for/{
+  /# ok icmp code for FORWARD/a\
+-A ufw-before-forward -p icmp --icmp-type destination-unreachable -j DROP\
+-A ufw-before-forward -p icmp --icmp-type time-exceeded -j DROP\
+-A ufw-before-forward -p icmp --icmp-type parameter-problem -j DROP\
+-A ufw-before-forward -p icmp --icmp-type echo-request -j DROP
+  /# ok icmp code for FORWARD/,/^# ok icmp codes for/d
+}' /etc/ufw/before.rules
 
+echo "✅ Правила ICMP DROP успешно применены."
+
+# Перезапускаем UFW
 echo "🔄 Перезапускаем UFW..."
 ufw disable && ufw enable
 
-echo "🎉 Готово! ICMP заблокирован."
+echo "🎉 Готово! ICMP полностью заблокирован."
 echo "   Бэкап: $BACKUP"
